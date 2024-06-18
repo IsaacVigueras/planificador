@@ -1,117 +1,213 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import React from 'react';
-import type {PropsWithChildren} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
   View,
+  StyleSheet,
+  Alert,
+  Pressable,
+  Image,
+  Modal,
+  ScrollView,
 } from 'react-native';
+import Header from './src/components/Header';
+import NewBudget from './src/components/NewBudget';
+import ControlBadget from './src/components/ControlBadget';
+import {PickerType, expenseType} from './src/interfaces';
+import ExpenseForm from './src/components/ExpenseForm';
+import ListExpense from './src/components/ListExpense';
+import {generateId} from './src/helpers';
+import Filter from './src/components/Filter';
+import {clearStorage, getItem, setItem} from './src/services';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+function App(): React.JSX.Element {
+  const [isValidBudget, setIsValidBudget] = useState<boolean>(false);
+  const [budget, setBudget] = useState<number>(0);
+  const [expenses, setExpenses] = useState<expenseType[]>([]);
+  const [modal, setModal] = useState<boolean>(false);
+  const [expense, setExpens] = useState<expenseType | undefined>();
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+  const [filter, setFilter] = useState<PickerType>(PickerType.emty);
+  const [filterData, setFilterData] = useState<expenseType[]>([]);
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+  useEffect(() => {
+    getBudgetStorage();
+    getExpensesStorage();
+  }, []);
+
+  useEffect(() => {
+    isValidBudget && budget && setItem('budget', budget);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isValidBudget]);
+
+  const getBudgetStorage = async () => {
+    const budgetStorage: number = (await getItem('budget')) || 0;
+
+    if (budgetStorage) {
+      setBudget(budgetStorage);
+      setIsValidBudget(true);
+    }
+  };
+
+  const getExpensesStorage = async () => {
+    const expensesStorage: expenseType[] = (await getItem('expenses')) || [];
+
+    setExpenses(expensesStorage);
+  };
+
+  useEffect(() => {
+    setItem('expenses', expenses);
+  }, [expenses]);
+
+  const handleNewBudget = (badget: number) => {
+    if (badget) {
+      setIsValidBudget(true);
+    } else {
+      Alert.alert('Error', 'El presupuesto no puede ser 0 o menor', [
+        {text: 'OK'},
+      ]);
+    }
+  };
+
+  const handleExpens = (expense: expenseType) => {
+    if ([expense.category, expense.name, expense.quantity].includes('')) {
+      Alert.alert('Error', 'Todos los campos son obligatorios');
+      return;
+    }
+
+    if (expense.id) {
+      const updateExpense = expenses.map(item =>
+        item.id === expense.id ? expense : item,
+      );
+
+      setExpenses(updateExpense);
+      setExpens(undefined);
+    } else {
+      expense.id = generateId();
+      expense.date = Date.now();
+
+      setExpenses([...expenses, expense]);
+    }
+
+    setModal(!modal);
+  };
+
+  const handleDeleteExpense = (id: string) => {
+    Alert.alert(
+      '¿Deseas eliminar este gasto?',
+      'Un gasto eliminado no se puede recuperar',
+      [
+        {text: 'Cancelar', style: 'cancel'},
+        {
+          text: 'Si, Continuar',
+          onPress: () => {
+            const filterExpenses = expenses.filter(item => item.id !== id);
+            setExpenses(filterExpenses);
+            setExpens(undefined);
+            setModal(false);
+          },
+        },
+      ],
+    );
+  };
+
+  const resetApp = () => {
+    Alert.alert(
+      '¿Deseas resetear la App?',
+      'Esto eliminará presupuesto y gastos',
+      [
+        {text: 'Cancelar', style: 'cancel'},
+        {
+          text: 'Si, continuar',
+          onPress: () => {
+            clearStorage();
+            setIsValidBudget(false);
+            setExpenses([]);
+            setFilterData([]);
+            setBudget(0);
+            setFilter(PickerType.emty);
+          },
+        },
+      ],
+    );
+  };
+
   return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
+    <View style={styles.container}>
+      <ScrollView>
+        <View style={styles.header}>
+          <Header />
+          {isValidBudget ? (
+            <ControlBadget
+              resetApp={resetApp}
+              expenses={expenses}
+              budget={budget}
+            />
+          ) : (
+            <NewBudget
+              budget={budget}
+              setBudget={setBudget}
+              onPress={handleNewBudget}
+            />
+          )}
+        </View>
+        {isValidBudget && (
+          <>
+            <Filter
+              expenses={expenses}
+              filter={filter}
+              setFilter={setFilter}
+              setFilterData={setFilterData}
+            />
+            <ListExpense
+              setExpens={setExpens}
+              setModal={setModal}
+              expenses={filterData}
+            />
+          </>
+        )}
+      </ScrollView>
+      {modal && (
+        <Modal
+          animationType="fade"
+          visible={modal}
+          onRequestClose={() => setModal(!modal)}>
+          <ExpenseForm
+            expense={expense}
+            setExpens={setExpens}
+            handleExpens={handleExpens}
+            setModal={setModal}
+            handleDeleteExpense={handleDeleteExpense}
+          />
+        </Modal>
+      )}
+      {isValidBudget && (
+        <Pressable onPress={() => setModal(!modal)} style={styles.btnAdd}>
+          <Image
+            style={styles.img}
+            source={require('./src/img/nuevo-gasto.png')}
+          />
+        </Pressable>
+      )}
     </View>
   );
 }
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
-  };
-
-  return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  container: {
+    backgroundColor: '#F5F5F5',
+    flex: 1,
   },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
+  header: {
+    backgroundColor: '#3B82F6',
+    minHeight: 400,
   },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
+  img: {
+    width: 60,
+    height: 60,
   },
-  highlight: {
-    fontWeight: '700',
+  btnAdd: {
+    position: 'absolute',
+    right: 40,
+    bottom: 20,
   },
 });
 
